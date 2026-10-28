@@ -1,19 +1,23 @@
 import { Injectable } from '@angular/core';
 
-// Sends website form messages (contact + demo requests + newsletter) to info@vishvadigitaltechnologies.com.
+// Sends website form messages (Contact, Book a Demo, Newsletter) to info@vishvadigitaltechnologies.com.
 //
-// Default: FormSubmit.co (no backend). It only delivers AFTER the address has been activated once:
-// the first message makes FormSubmit email info@vishvadigitaltechnologies.com an "Activate Form" link
-// (check Spam too). Until that link is clicked, FormSubmit answers { success: "false" } - that is the
-// "success: false" you see in the browser Network tab. The reason is in the response "message", and is
-// also printed in the browser console by this service.
+// ===== TURN ON WEB3FORMS (3 steps, 2 minutes, free) =====
+//  1. Open https://web3forms.com  ->  enter  info@vishvadigitaltechnologies.com  ->  "Create Access Key".
+//  2. The access key arrives in that mailbox (check Spam). Copy it.
+//  3. Paste it between the quotes of WEB3FORMS_KEY below, save, rebuild and upload the site.
+// Optional: in the Web3Forms dashboard add your website domain so the key only works on your site.
+// The key is meant to be public (it can only send mail to your address), so it is safe in front-end code.
 //
-// Optional (more reliable, no activation e-mail): create a free access key at https://web3forms.com
-// for info@vishvadigitaltechnologies.com and paste it below. When a key is set it is used instead of FormSubmit.
+// While WEB3FORMS_KEY is empty the service falls back to FormSubmit.co, which only delivers after you click
+// the "Activate Form" e-mail it sends to the mailbox on the first submission.
+//
+// If sending fails for any reason, the reason is printed in the browser console ("[vSuite mail]"),
+// and the forms open the visitor's e-mail app with the message ready, so no enquiry is lost.
 const RECIPIENT = 'info@vishvadigitaltechnologies.com';
-const FORMSUBMIT_ENDPOINT = 'https://formsubmit.co/ajax/' + RECIPIENT;
+const WEB3FORMS_KEY = ''; // <- paste your Web3Forms access key here, e.g. '1a2b3c4d-5e6f-....'
 const WEB3FORMS_ENDPOINT = 'https://api.web3forms.com/submit';
-const WEB3FORMS_KEY = ''; // e.g. '1a2b3c4d-....' (leave empty to use FormSubmit)
+const FORMSUBMIT_ENDPOINT = 'https://formsubmit.co/ajax/' + RECIPIENT;
 
 @Injectable({ providedIn: 'root' })
 export class MailService {
@@ -38,12 +42,27 @@ export class MailService {
     const clean: Record<string, string> = {};
     for (const [k, v] of Object.entries(fields)) if (v) clean[k] = String(v);
 
-    const useWeb3 = WEB3FORMS_KEY.length > 0;
+    const useWeb3 = WEB3FORMS_KEY.trim().length > 0;
     const body: Record<string, string | boolean> = useWeb3
-      ? { access_key: WEB3FORMS_KEY, subject, from_name: clean['Name'] ?? 'Website visitor', ...clean, botcheck: '' }
+      ? {
+          access_key: WEB3FORMS_KEY.trim(),
+          subject,
+          from_name: clean['Name'] ?? 'vSuite website',
+          ...clean,
+          // Web3Forms shows "message" as the main text of the e-mail
+          message:
+            clean['Message'] ??
+            clean['Details / requirements'] ??
+            Object.entries(clean)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join('\n'),
+          botcheck: '',
+        }
       : { _subject: subject, _template: 'table', _captcha: 'false', _honey: '', ...clean };
-    if (clean['Email'] && !useWeb3) body['_replyto'] = clean['Email'];
-    if (clean['Email'] && useWeb3) body['email'] = clean['Email'];
+    if (clean['Email']) {
+      if (useWeb3) body['email'] = clean['Email'];
+      else body['_replyto'] = clean['Email'];
+    }
 
     try {
       const res = await fetch(useWeb3 ? WEB3FORMS_ENDPOINT : FORMSUBMIT_ENDPOINT, {
